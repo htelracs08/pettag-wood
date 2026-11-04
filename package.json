@@ -9,8 +9,10 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@imgly/background-removal": "^1.7.0",
     "@supabase/ssr": "^0.12.7",
     "@supabase/supabase-js": "^2.118.0",
+    "imagetracerjs": "^1.2.6",
     "next": "16.4.4",
     "react": "19.3.0",
     "react-dom": "19.3.0"

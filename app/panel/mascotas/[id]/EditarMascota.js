@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import PetForm from "@/components/PetForm";
@@ -26,7 +27,12 @@ export default function EditarMascota() {
 
   return (
     <div>
-      <h1 className="mb-6 text-2xl font-bold text-amber-900">Editar a {mascota.nombre}</h1>
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+        <h1 className="text-2xl font-bold text-amber-900">Editar a {mascota.nombre}</h1>
+        <Link href={`/panel/mascotas/${mascota.id}/diseno`} className="btn-primario">
+          🔥 Crear diseño para láser
+        </Link>
+      </div>
       <PetForm mascota={mascota} />
     </div>
   );
