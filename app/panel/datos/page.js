@@ -2,13 +2,17 @@
 
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { useAvisos } from "@/components/Avisos";
+import { Campo, Cargando, Migas, Spinner } from "@/components/ui";
 
-// Datos de contacto del dueño (los que verá quien encuentre a la mascota)
+// Datos de contacto del dueño: los que verá quien encuentre a la mascota
 export default function MisDatos() {
   const supabase = createClient();
+  const avisar = useAvisos();
   const [perfil, setPerfil] = useState(null);
   const [guardando, setGuardando] = useState(false);
-  const [mensaje, setMensaje] = useState("");
+  const [cambios, setCambios] = useState(false);
+  const [errorWa, setErrorWa] = useState("");
 
   useEffect(() => {
     supabase.auth.getUser().then(async ({ data: { user } }) => {
@@ -21,71 +25,92 @@ export default function MisDatos() {
 
   function cambiar(campo, valor) {
     setPerfil((p) => ({ ...p, [campo]: valor }));
-    setMensaje("");
+    setCambios(true);
+    if (campo === "whatsapp") setErrorWa("");
   }
 
   async function guardar(e) {
     e.preventDefault();
+    const wa = (perfil.whatsapp ?? "").replace(/\D/g, "");
+    if (wa && wa.length < 10) return setErrorWa("Incluye el código de país. Ej: 573001234567 (Colombia) o 593991234567 (Ecuador).");
     setGuardando(true);
     const { error } = await supabase
       .from("perfiles")
       .update({
         nombre: perfil.nombre,
         telefono: perfil.telefono,
-        whatsapp: perfil.whatsapp,
+        whatsapp: wa,
         ciudad: perfil.ciudad,
         mostrar_telefono: perfil.mostrar_telefono,
       })
       .eq("id", perfil.id);
     setGuardando(false);
-    setMensaje(error ? "Error: " + error.message : "Datos guardados ✔");
+    if (error) return avisar("No se pudieron guardar tus datos: " + error.message, "error");
+    setCambios(false);
+    avisar("Tus datos de contacto quedaron guardados");
   }
 
-  if (!perfil) return <p className="text-stone-500">Cargando...</p>;
+  if (!perfil) return <Cargando />;
+
+  const sinContacto = !perfil.telefono && !perfil.whatsapp;
 
   return (
-    <div className="mx-auto max-w-lg">
-      <h1 className="text-2xl font-bold text-amber-900">Mis datos de contacto</h1>
-      <p className="mt-1 text-sm text-stone-600">
-        Esto es lo que verá quien encuentre a tu mascota al escanear el QR.
-      </p>
+    <div className="mx-auto max-w-xl">
+      <Migas items={[{ texto: "Mis mascotas", href: "/panel" }, { texto: "Mis datos" }]} />
+      <h1 className="text-4xl font-extrabold">Mis datos de contacto</h1>
+      <p className="mt-1 text-tinta-suave">Así te encontrarán cuando alguien escanee la placa de tu mascota.</p>
 
-      <form onSubmit={guardar} className="mt-6 space-y-4 rounded-xl border border-stone-200 bg-white p-6 shadow-sm">
-        <Campo etiqueta="Nombre">
+      {sinContacto && (
+        <p role="alert" className="mt-5 rounded-2xl bg-sol-claro px-4 py-3 text-sm font-medium text-amber-900">
+          ⚠️ Aún no tienes teléfono ni WhatsApp. Sin ellos, quien encuentre a tu mascota no podrá contactarte.
+        </p>
+      )}
+
+      <form onSubmit={guardar} className="tarjeta mt-6 space-y-5 p-6 sm:p-8" noValidate>
+        <Campo etiqueta="Tu nombre" ayuda="Se muestra como «Ayúdame a volver con …»">
           <input value={perfil.nombre ?? ""} onChange={(e) => cambiar("nombre", e.target.value)} className="input" />
         </Campo>
-        <Campo etiqueta="Teléfono">
-          <input type="tel" value={perfil.telefono ?? ""} onChange={(e) => cambiar("telefono", e.target.value)} className="input" />
-        </Campo>
-        <Campo etiqueta="WhatsApp (con código de país, ej: 593991234567)">
-          <input type="tel" value={perfil.whatsapp ?? ""} onChange={(e) => cambiar("whatsapp", e.target.value)} className="input" />
-        </Campo>
+        <div className="grid gap-5 sm:grid-cols-2">
+          <Campo etiqueta="Teléfono para llamadas">
+            <input type="tel" autoComplete="tel" value={perfil.telefono ?? ""} onChange={(e) => cambiar("telefono", e.target.value)} className="input" />
+          </Campo>
+          <Campo etiqueta="WhatsApp" ayuda="Con código de país, sin + ni espacios." error={errorWa}>
+            <input
+              type="tel"
+              placeholder="573001234567"
+              value={perfil.whatsapp ?? ""}
+              onChange={(e) => cambiar("whatsapp", e.target.value)}
+              aria-invalid={Boolean(errorWa)}
+              className="input"
+            />
+          </Campo>
+        </div>
         <Campo etiqueta="Ciudad">
           <input value={perfil.ciudad ?? ""} onChange={(e) => cambiar("ciudad", e.target.value)} className="input" />
         </Campo>
-        <label className="flex items-center gap-2 text-sm">
+
+        <label className="flex cursor-pointer items-start gap-3 rounded-2xl border-2 border-borde p-4">
           <input
             type="checkbox"
             checked={perfil.mostrar_telefono}
             onChange={(e) => cambiar("mostrar_telefono", e.target.checked)}
+            className="mt-1 h-5 w-5 accent-collar"
           />
-          Mostrar mi teléfono y WhatsApp en el perfil público
+          <span>
+            <span className="block font-bold">Mostrar mi teléfono y WhatsApp en el perfil público</span>
+            <span className="text-sm text-tinta-suave">
+              Si lo desactivas, solo se verá tu nombre y ciudad. Te recomendamos dejarlo activado.
+            </span>
+          </span>
         </label>
 
-        {mensaje && <p className="text-sm text-green-700">{mensaje}</p>}
-        <button disabled={guardando} className="btn-primario">
-          {guardando ? "Guardando..." : "Guardar"}
-        </button>
+        <div className="flex flex-wrap items-center gap-3 border-t border-borde pt-5">
+          <button disabled={guardando || !cambios} className="btn-primario">
+            {guardando && <Spinner />} Guardar mis datos
+          </button>
+          {cambios && <span className="text-sm text-tinta-suave">Tienes cambios sin guardar</span>}
+        </div>
       </form>
     </div>
-  );
-}
-
-function Campo({ etiqueta, children }) {
-  return (
-    <label className="block">
-      <span className="mb-1 block text-sm font-medium text-stone-700">{etiqueta}</span>
-      {children}
-    </label>
   );
 }

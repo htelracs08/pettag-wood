@@ -31,7 +31,7 @@ export async function proxy(request) {
 
   const ruta = request.nextUrl.pathname;
 
-  if (!user && ruta.startsWith("/panel")) {
+  if (!user && (ruta.startsWith("/panel") || ruta.startsWith("/admin"))) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
     return NextResponse.redirect(url);
@@ -47,5 +47,5 @@ export async function proxy(request) {
 }
 
 export const config = {
-  matcher: ["/panel/:path*", "/login"],
+  matcher: ["/panel/:path*", "/admin/:path*", "/admin", "/login"],
 };

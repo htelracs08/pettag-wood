@@ -1,18 +1,91 @@
 @import "tailwindcss";
 
-@theme inline {
-  --font-sans: var(--font-geist-sans);
+/* ===== Paleta PetTag Wood: madera quemada + collar ===== */
+@theme {
+  --color-tinta: #2b1a10;        /* texto: madera quemada */
+  --color-tinta-suave: #6b5546;  /* texto secundario */
+  --color-collar: #0b7a6e;       /* color principal (contraste 5.2:1) */
+  --color-collar-oscuro: #08605a;
+  --color-collar-claro: #d7f2ee;
+  --color-sol: #ffc83d;          /* resaltados y foco */
+  --color-sol-claro: #fff4d1;
+  --color-madera: #e2bc8a;
+  --color-madera-claro: #f6e7d0;
+  --color-fondo: #f5faf9;
+  --color-alerta: #d64545;
+  --color-alerta-claro: #fde8e8;
+  --color-borde: #e3e8e6;
 }
 
-/* Estilos reutilizables para formularios y botones */
+@theme inline {
+  --font-sans: var(--font-figtree);
+  --font-titulo: var(--font-baloo);
+}
+
+body {
+  background: var(--color-fondo);
+  color: var(--color-tinta);
+}
+
+h1, h2, h3 {
+  font-family: var(--font-baloo);
+  line-height: 1.15;
+}
+
+/* Foco visible para teclado (accesibilidad) */
+:focus-visible {
+  outline: 3px solid var(--color-sol);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+/* ===== Componentes reutilizables (consistencia: heurística 4) ===== */
+@utility btn {
+  @apply inline-flex items-center justify-center gap-2 rounded-full px-5 py-2.5 font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50;
+}
+
 @layer components {
   .input {
-    @apply w-full rounded-md border border-stone-300 bg-white px-3 py-2 text-stone-800 outline-none focus:border-amber-700 focus:ring-2 focus:ring-amber-200;
+    @apply w-full rounded-xl border-2 border-borde bg-white px-3.5 py-2.5 text-tinta outline-none transition-colors placeholder:text-tinta-suave/60 focus:border-collar;
+  }
+  .input[aria-invalid="true"] {
+    @apply border-alerta;
   }
   .btn-primario {
-    @apply rounded-lg bg-amber-800 px-4 py-2 font-medium text-white hover:bg-amber-900 disabled:opacity-50;
+    @apply btn bg-collar text-white hover:bg-collar-oscuro;
   }
   .btn-secundario {
-    @apply rounded-lg border border-stone-300 bg-white px-4 py-2 font-medium text-stone-700 hover:bg-stone-100;
+    @apply btn border-2 border-borde bg-white text-tinta hover:border-collar hover:text-collar;
   }
+  .btn-peligro {
+    @apply btn bg-alerta text-white hover:bg-red-700;
+  }
+  .btn-sol {
+    @apply btn bg-sol text-tinta hover:bg-amber-300;
+  }
+  .tarjeta {
+    @apply rounded-2xl border border-borde bg-white;
+  }
+}
+
+/* Animación única: la placa se balancea al cargar el inicio */
+@media (prefers-reduced-motion: no-preference) {
+  .placa-balanceo {
+    transform-origin: 50% 0;
+    animation: balanceo 2.4s ease-out 0.3s both;
+  }
+  .aparecer {
+    animation: aparecer 0.25s ease-out both;
+  }
+}
+@keyframes balanceo {
+  0% { transform: rotate(-14deg); }
+  30% { transform: rotate(9deg); }
+  55% { transform: rotate(-5deg); }
+  75% { transform: rotate(2deg); }
+  100% { transform: rotate(0deg); }
+}
+@keyframes aparecer {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
 }

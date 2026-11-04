@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { Campo, Spinner } from "@/components/ui";
+import { Logo } from "@/components/Navbar";
 
 export default function Login() {
   const supabase = createClient();
@@ -12,27 +14,25 @@ export default function Login() {
   const [nombre, setNombre] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [verPassword, setVerPassword] = useState(false);
   const [error, setError] = useState("");
   const [mensaje, setMensaje] = useState("");
   const [cargando, setCargando] = useState(false);
+
+  const registro = modo === "registro";
 
   async function enviar(e) {
     e.preventDefault();
     setError("");
     setMensaje("");
+    if (password.length < 6) return setError("La contraseña debe tener al menos 6 caracteres.");
     setCargando(true);
 
-    if (modo === "registro") {
-      const { data, error } = await supabase.auth.signUp({
-        email,
-        password,
-        options: { data: { nombre } },
-      });
+    if (registro) {
+      const { data, error } = await supabase.auth.signUp({ email, password, options: { data: { nombre } } });
       setCargando(false);
       if (error) return setError(traducirError(error.message));
-      if (!data.session) {
-        return setMensaje("Cuenta creada. Revisa tu correo para confirmarla y luego ingresa.");
-      }
+      if (!data.session) return setMensaje("¡Cuenta creada! Abre el enlace que enviamos a tu correo y luego ingresa aquí.");
     } else {
       const { error } = await supabase.auth.signInWithPassword({ email, password });
       setCargando(false);
@@ -43,62 +43,105 @@ export default function Login() {
     router.refresh();
   }
 
+  function cambiarModo() {
+    setModo(registro ? "entrar" : "registro");
+    setError("");
+    setMensaje("");
+  }
+
   return (
-    <div className="mx-auto max-w-sm rounded-xl border border-stone-200 bg-white p-6 shadow-sm">
-      <h1 className="text-2xl font-bold text-amber-900">
-        {modo === "entrar" ? "Ingresar" : "Crear cuenta"}
-      </h1>
+    <div className="mx-auto max-w-md">
+      <div className="tarjeta p-7 sm:p-9">
+        <div className="flex justify-center">
+          <Logo tamano={52} />
+        </div>
+        <h1 className="mt-3 text-center text-3xl font-extrabold">{registro ? "Crea tu cuenta" : "Hola de nuevo"}</h1>
+        <p className="mt-1 text-center text-tinta-suave">
+          {registro ? "Así guardamos las placas de tus mascotas." : "Ingresa para ver a tus mascotas."}
+        </p>
 
-      <form onSubmit={enviar} className="mt-6 space-y-4">
-        {modo === "registro" && (
-          <Campo etiqueta="Tu nombre">
-            <input required value={nombre} onChange={(e) => setNombre(e.target.value)} className="input" />
+        {/* Pestañas: dejan claro en qué modo estás (heurística 1) */}
+        <div className="mt-6 grid grid-cols-2 rounded-full bg-fondo p-1" role="tablist">
+          {[
+            ["entrar", "Ingresar"],
+            ["registro", "Crear cuenta"],
+          ].map(([id, texto]) => (
+            <button
+              key={id}
+              role="tab"
+              aria-selected={modo === id}
+              onClick={() => modo !== id && cambiarModo()}
+              className={`rounded-full py-2 text-sm font-bold ${modo === id ? "bg-white text-collar shadow-sm" : "text-tinta-suave"}`}
+            >
+              {texto}
+            </button>
+          ))}
+        </div>
+
+        <form onSubmit={enviar} className="mt-6 space-y-4" noValidate>
+          {registro && (
+            <Campo etiqueta="Tu nombre" ayuda="Lo verá quien encuentre a tu mascota.">
+              <input required autoComplete="name" value={nombre} onChange={(e) => setNombre(e.target.value)} className="input" />
+            </Campo>
+          )}
+          <Campo etiqueta="Correo">
+            <input
+              type="email"
+              required
+              autoComplete="email"
+              placeholder="tucorreo@ejemplo.com"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              className="input"
+            />
           </Campo>
-        )}
-        <Campo etiqueta="Correo">
-          <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} className="input" />
-        </Campo>
-        <Campo etiqueta="Contraseña (mínimo 6 caracteres)">
-          <input type="password" required minLength={6} value={password} onChange={(e) => setPassword(e.target.value)} className="input" />
-        </Campo>
+          <Campo etiqueta="Contraseña" ayuda={registro ? "Mínimo 6 caracteres." : undefined}>
+            <div className="relative">
+              <input
+                type={verPassword ? "text" : "password"}
+                required
+                autoComplete={registro ? "new-password" : "current-password"}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="input pr-20"
+              />
+              <button
+                type="button"
+                onClick={() => setVerPassword(!verPassword)}
+                className="absolute inset-y-0 right-3 text-sm font-semibold text-collar"
+              >
+                {verPassword ? "Ocultar" : "Mostrar"}
+              </button>
+            </div>
+          </Campo>
 
-        {error && <p className="text-sm text-red-600">{error}</p>}
-        {mensaje && <p className="text-sm text-green-700">{mensaje}</p>}
+          {error && (
+            <p role="alert" className="rounded-xl bg-alerta-claro px-3 py-2 text-sm font-medium text-alerta">
+              {error}
+            </p>
+          )}
+          {mensaje && (
+            <p role="status" className="rounded-xl bg-collar-claro px-3 py-2 text-sm font-medium text-collar-oscuro">
+              {mensaje}
+            </p>
+          )}
 
-        <button disabled={cargando} className="btn-primario w-full">
-          {cargando ? "Un momento..." : modo === "entrar" ? "Ingresar" : "Crear cuenta"}
-        </button>
-      </form>
-
-      <p className="mt-4 text-center text-sm text-stone-600">
-        {modo === "entrar" ? "¿No tienes cuenta? " : "¿Ya tienes cuenta? "}
-        <button
-          onClick={() => {
-            setModo(modo === "entrar" ? "registro" : "entrar");
-            setError("");
-            setMensaje("");
-          }}
-          className="font-medium text-amber-800 hover:underline"
-        >
-          {modo === "entrar" ? "Regístrate" : "Ingresa"}
-        </button>
-      </p>
+          <button disabled={cargando} className="btn-primario w-full py-3 text-base">
+            {cargando && <Spinner />}
+            {cargando ? "Un momento..." : registro ? "Crear mi cuenta" : "Ingresar"}
+          </button>
+        </form>
+      </div>
     </div>
   );
 }
 
-function Campo({ etiqueta, children }) {
-  return (
-    <label className="block">
-      <span className="mb-1 block text-sm font-medium text-stone-700">{etiqueta}</span>
-      {children}
-    </label>
-  );
-}
-
+// Errores en lenguaje claro y con la forma de solucionarlos (heurística 9)
 function traducirError(msg) {
-  if (msg.includes("Invalid login credentials")) return "Correo o contraseña incorrectos.";
-  if (msg.includes("already registered")) return "Ese correo ya tiene una cuenta. Ingresa en su lugar.";
-  if (msg.includes("Email not confirmed")) return "Primero confirma tu correo desde el enlace que te enviamos.";
-  return msg;
+  if (msg.includes("Invalid login credentials")) return "El correo o la contraseña no coinciden. Revísalos e intenta otra vez.";
+  if (msg.includes("already registered")) return "Ese correo ya tiene una cuenta. Usa la pestaña «Ingresar».";
+  if (msg.includes("Email not confirmed")) return "Aún no confirmas tu correo. Abre el enlace que te enviamos.";
+  if (msg.includes("valid email") || msg.includes("invalid format")) return "Escribe un correo válido, por ejemplo ana@gmail.com.";
+  if (msg.includes("rate limit")) return "Hiciste muchos intentos seguidos. Espera un minuto e intenta de nuevo.";
+  return "Algo salió mal: " + msg;
 }

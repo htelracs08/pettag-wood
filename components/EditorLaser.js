@@ -3,43 +3,48 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
+import { useAvisos } from "@/components/Avisos";
+import { Spinner, Vacio } from "@/components/ui";
 
 // Tamaño máximo (en píxeles) con el que se procesa la imagen.
-// 1200 px alcanza de sobra para un tag de 2–5 cm a 300 ppp.
+// 1200 px alcanza de sobra para una placa de 2–5 cm a 300 ppp.
 const TAM_MAX = 1200;
 
 const MODOS = [
-  { id: "silueta", nombre: "Silueta", ayuda: "Solo blanco y negro. Ideal para corte o grabado vectorial (SVG)." },
-  { id: "tramado", nombre: "Fotograbado", ayuda: "Puntos que simulan sombras. Ideal para grabar la foto en madera." },
-  { id: "grises", nombre: "Escala de grises", ayuda: "Para máquinas que controlan la potencia según el tono." },
+  { id: "tramado", nombre: "Fotograbado", ayuda: "Puntitos que imitan las sombras de la foto. El más usado para grabar fotos en madera." },
+  { id: "silueta", nombre: "Silueta", ayuda: "Solo blanco y negro, con bordes marcados. Permite descargar SVG." },
+  { id: "grises", nombre: "Grises", ayuda: "Para máquinas que cambian la potencia según el tono (modo Grayscale)." },
 ];
 
-export default function EditorLaser({ mascota }) {
-  const supabase = createClient();
+// Atajos con valores probados (heurística 7: flexibilidad y eficiencia)
+const RECOMENDADOS = [
+  { nombre: "Foto detallada", modo: "tramado", contraste: 30, brillo: 0, umbral: 128 },
+  { nombre: "Silueta marcada", modo: "silueta", contraste: 40, brillo: 10, umbral: 140 },
+];
 
-  // Imágenes
-  const [imgOriginal, setImgOriginal] = useState(null); // HTMLImageElement
+export default function EditorLaser({ mascota, alGuardar }) {
+  const supabase = createClient();
+  const avisar = useAvisos();
+
+  const [imgOriginal, setImgOriginal] = useState(null);
   const [imgSinFondo, setImgSinFondo] = useState(null);
   const [usarSinFondo, setUsarSinFondo] = useState(false);
 
-  // Ajustes
   const [modo, setModo] = useState("tramado");
   const [contraste, setContraste] = useState(20);
   const [brillo, setBrillo] = useState(0);
   const [umbral, setUmbral] = useState(128);
   const [invertir, setInvertir] = useState(false);
-  const [vista, setVista] = useState("madera"); // "madera" o "byn"
+  const [vista, setVista] = useState("madera");
 
-  // Estado
   const [estado, setEstado] = useState("Cargando foto...");
   const [quitandoFondo, setQuitandoFondo] = useState(false);
   const [guardando, setGuardando] = useState(false);
-  const [mensaje, setMensaje] = useState("");
+  const [guardado, setGuardado] = useState(false);
 
-  const canvasResultado = useRef(null); // imagen final en blanco y negro (la que se exporta)
-  const canvasVista = useRef(null); // vista previa (madera o blanco y negro)
+  const canvasResultado = useRef(null);
+  const canvasVista = useRef(null);
 
-  // 1. Cargar la foto de la mascota
   useEffect(() => {
     if (!mascota.foto_url) return;
     cargarImagen(mascota.foto_url)
@@ -47,45 +52,51 @@ export default function EditorLaser({ mascota }) {
         setImgOriginal(img);
         setEstado("");
       })
-      .catch(() => setEstado("No se pudo cargar la foto."));
+      .catch(() => setEstado("No pudimos abrir la foto. Vuelve a subirla desde la ficha de tu mascota."));
   }, [mascota.foto_url]);
 
-  // 2. Procesar cada vez que cambia un ajuste
   const imagen = usarSinFondo && imgSinFondo ? imgSinFondo : imgOriginal;
 
   useEffect(() => {
     if (!imagen || !canvasResultado.current) return;
     procesar(imagen, canvasResultado.current, { modo, contraste, brillo, umbral, invertir });
     dibujarVista(canvasResultado.current, canvasVista.current, vista);
+    setGuardado(false);
   }, [imagen, modo, contraste, brillo, umbral, invertir, vista]);
 
-  // Quitar el fondo (se hace en el navegador, gratis)
   async function quitarFondo() {
     setQuitandoFondo(true);
-    setMensaje("");
     try {
       const { removeBackground } = await import("@imgly/background-removal");
       const blobFoto = await (await fetch(mascota.foto_url)).blob();
       const blobSinFondo = await removeBackground(blobFoto, {
         model: "isnet_quint8",
         progress: (clave, actual, total) => {
-          if (clave.startsWith("fetch")) {
-            setEstado(`Descargando el modelo (solo la primera vez)... ${Math.round((actual / total) * 100)}%`);
-          } else {
-            setEstado("Quitando el fondo...");
-          }
+          setEstado(
+            clave.startsWith("fetch")
+              ? `Preparando la herramienta (solo la primera vez)... ${Math.round((actual / total) * 100)}%`
+              : "Quitando el fondo..."
+          );
         },
       });
       const img = await cargarImagen(URL.createObjectURL(blobSinFondo));
       setImgSinFondo(img);
       setUsarSinFondo(true);
-      setEstado("");
+      avisar("Fondo quitado");
     } catch (e) {
       console.error(e);
-      setEstado("");
-      setMensaje("No se pudo quitar el fondo. Prueba con otra foto o desde otro navegador (Chrome o Edge).");
+      avisar("No pudimos quitar el fondo. Prueba en Chrome o Edge, o con una foto de fondo más simple.", "error");
     }
+    setEstado("");
     setQuitandoFondo(false);
+  }
+
+  function aplicarRecomendado(r) {
+    setModo(r.modo);
+    setContraste(r.contraste);
+    setBrillo(r.brillo);
+    setUmbral(r.umbral);
+    setInvertir(false);
   }
 
   function descargarPNG() {
@@ -103,21 +114,18 @@ export default function EditorLaser({ mascota }) {
         { r: 0, g: 0, b: 0, a: 255 },
         { r: 255, g: 255, b: 255, a: 255 },
       ],
-      pathomit: 8, // ignora manchitas muy pequeñas
+      pathomit: 8,
       ltres: 1,
       qtres: 1,
     });
-    // Dejamos solo las zonas negras (lo que se graba)
     svg = svg
       .replace(/<path fill="rgb\(255,255,255\)"[^>]*\/>/g, "")
       .replace(/stroke="rgb\(0,0,0\)" stroke-width="1"/g, 'stroke="none"');
     descargar(new Blob([svg], { type: "image/svg+xml" }), `${nombreArchivo()}.svg`);
   }
 
-  // Guardar el diseño en Supabase para que quede asociado a la mascota
   async function guardarDiseno() {
     setGuardando(true);
-    setMensaje("");
     const {
       data: { user },
     } = await supabase.auth.getUser();
@@ -127,12 +135,15 @@ export default function EditorLaser({ mascota }) {
     const { error: errSubida } = await supabase.storage.from("fotos").upload(ruta, blob, { contentType: "image/png" });
     if (errSubida) {
       setGuardando(false);
-      return setMensaje("No se pudo guardar: " + errSubida.message);
+      return avisar("No se pudo guardar el grabado. Revisa tu conexión e intenta otra vez.", "error");
     }
     const url = supabase.storage.from("fotos").getPublicUrl(ruta).data.publicUrl;
     const { error } = await supabase.from("mascotas").update({ diseno_url: url }).eq("id", mascota.id);
     setGuardando(false);
-    setMensaje(error ? "No se pudo guardar: " + error.message : "Diseño guardado ✔");
+    if (error) return avisar("No se pudo guardar el grabado: " + error.message, "error");
+    setGuardado(true);
+    alGuardar?.(url);
+    avisar("Grabado guardado. ¡Ahora diseña su placa!");
   }
 
   function nombreArchivo() {
@@ -141,113 +152,131 @@ export default function EditorLaser({ mascota }) {
 
   if (!mascota.foto_url) {
     return (
-      <div className="rounded-xl border border-dashed border-stone-300 p-10 text-center text-stone-600">
-        Esta mascota no tiene foto.{" "}
-        <Link href={`/panel/mascotas/${mascota.id}`} className="font-medium text-amber-800 hover:underline">
-          Sube una foto primero
-        </Link>
-        .
-      </div>
+      <Vacio
+        icono="📷"
+        titulo="Falta la foto"
+        texto="Para crear el grabado necesitamos una foto de tu mascota."
+        accion={<Link href={`/panel/mascotas/${mascota.id}`} className="btn-primario">Subir una foto</Link>}
+      />
     );
   }
 
   const modoActual = MODOS.find((m) => m.id === modo);
 
   return (
-    <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
+    <div className="grid gap-6 lg:grid-cols-[1fr_340px]">
       {/* Vista previa */}
       <div>
-        <div className="mb-3 flex gap-2 text-sm">
+        <div className="mb-3 inline-flex rounded-full bg-white p-1 ring-1 ring-borde" role="tablist" aria-label="Tipo de vista">
           <BotonPestana activo={vista === "madera"} onClick={() => setVista("madera")}>
-            Vista en madera
+            Así se verá en madera
           </BotonPestana>
           <BotonPestana activo={vista === "byn"} onClick={() => setVista("byn")}>
-            Archivo para láser
+            Archivo para el láser
           </BotonPestana>
         </div>
 
-        <div className="flex min-h-80 items-center justify-center overflow-hidden rounded-xl border border-stone-200 bg-white p-4">
-          {estado && !imagen ? (
-            <p className="text-stone-500">{estado}</p>
+        <div className="relative flex min-h-80 items-center justify-center overflow-hidden rounded-3xl border border-borde bg-white p-5">
+          {!imagen ? (
+            <p className="flex items-center gap-2 text-tinta-suave">
+              {!estado.startsWith("No") && <Spinner />} {estado}
+            </p>
           ) : (
-            <canvas ref={canvasVista} className="h-auto max-h-[70vh] w-auto max-w-full rounded-lg" />
+            <canvas ref={canvasVista} className="h-auto max-h-[65vh] w-auto max-w-full rounded-xl" />
+          )}
+          {imagen && quitandoFondo && (
+            <div className="absolute inset-0 flex items-center justify-center bg-white/80" role="status">
+              <p className="flex items-center gap-2 rounded-full bg-tinta px-4 py-2 font-semibold text-white">
+                <Spinner /> {estado || "Procesando..."}
+              </p>
+            </div>
           )}
         </div>
-        {/* Canvas oculto con el resultado real en blanco y negro */}
         <canvas ref={canvasResultado} className="hidden" />
-
-        {estado && imagen && <p className="mt-2 text-sm text-amber-800">{estado}</p>}
       </div>
 
       {/* Controles */}
-      <div className="space-y-5 rounded-xl border border-stone-200 bg-white p-5 shadow-sm">
-        <Seccion titulo="1. Fondo">
+      <div className="space-y-6 rounded-3xl border border-borde bg-white p-5">
+        <Seccion titulo="Fondo">
           {!imgSinFondo ? (
-            <button onClick={quitarFondo} disabled={quitandoFondo || !imgOriginal} className="btn-secundario w-full">
-              {quitandoFondo ? "Procesando..." : "✨ Quitar fondo"}
-            </button>
+            <>
+              <button onClick={quitarFondo} disabled={quitandoFondo || !imgOriginal} className="btn-sol w-full">
+                {quitandoFondo ? <Spinner /> : "✨"} {quitandoFondo ? "Quitando fondo..." : "Quitar fondo automáticamente"}
+              </button>
+              <p className="text-xs text-tinta-suave">Recomendado: así solo se graba tu mascota. La primera vez tarda unos segundos.</p>
+            </>
           ) : (
-            <label className="flex items-center gap-2 text-sm">
-              <input type="checkbox" checked={usarSinFondo} onChange={(e) => setUsarSinFondo(e.target.checked)} />
-              Usar foto sin fondo
+            <label className="flex items-center gap-2 font-medium">
+              <input type="checkbox" checked={usarSinFondo} onChange={(e) => setUsarSinFondo(e.target.checked)} className="h-5 w-5 accent-collar" />
+              Usar la foto sin fondo
             </label>
           )}
-          <p className="mt-1 text-xs text-stone-500">La primera vez tarda un poco porque descarga el modelo de IA.</p>
         </Seccion>
 
-        <Seccion titulo="2. Estilo de grabado">
-          <div className="grid grid-cols-3 gap-1">
+        <Seccion titulo="Estilo de grabado">
+          <div className="grid grid-cols-3 gap-1 rounded-2xl bg-fondo p-1">
             {MODOS.map((m) => (
               <BotonPestana key={m.id} activo={modo === m.id} onClick={() => setModo(m.id)}>
                 {m.nombre}
               </BotonPestana>
             ))}
           </div>
-          <p className="mt-2 text-xs text-stone-500">{modoActual.ayuda}</p>
+          <p className="text-sm text-tinta-suave">{modoActual.ayuda}</p>
         </Seccion>
 
-        <Seccion titulo="3. Ajustes">
+        <Seccion titulo="Ajustes">
+          <div className="flex flex-wrap gap-2">
+            {RECOMENDADOS.map((r) => (
+              <button key={r.nombre} onClick={() => aplicarRecomendado(r)} className="rounded-full bg-collar-claro px-3 py-1 text-xs font-bold text-collar-oscuro hover:bg-collar hover:text-white">
+                ⚡ {r.nombre}
+              </button>
+            ))}
+          </div>
           <Deslizador etiqueta="Contraste" valor={contraste} min={-100} max={100} onChange={setContraste} />
           <Deslizador etiqueta="Brillo" valor={brillo} min={-100} max={100} onChange={setBrillo} />
           {modo !== "grises" && (
-            <Deslizador etiqueta="Umbral (cuánto se quema)" valor={umbral} min={1} max={254} onChange={setUmbral} />
+            <Deslizador etiqueta="Intensidad del quemado" valor={256 - umbral} min={2} max={255} onChange={(v) => setUmbral(256 - v)} />
           )}
-          <label className="flex items-center gap-2 text-sm">
-            <input type="checkbox" checked={invertir} onChange={(e) => setInvertir(e.target.checked)} />
-            Invertir (para madera oscura)
+          <label className="flex items-center gap-2 text-sm font-medium">
+            <input type="checkbox" checked={invertir} onChange={(e) => setInvertir(e.target.checked)} className="h-4 w-4 accent-collar" />
+            Invertir colores (para madera oscura)
           </label>
           <button
-            onClick={() => {
-              setContraste(20);
-              setBrillo(0);
-              setUmbral(128);
-              setInvertir(false);
-            }}
-            className="text-xs text-amber-800 hover:underline"
+            onClick={() => aplicarRecomendado({ modo, contraste: 20, brillo: 0, umbral: 128 })}
+            className="text-sm font-semibold text-collar hover:underline"
           >
-            Restablecer ajustes
+            ↺ Deshacer ajustes
           </button>
         </Seccion>
 
-        <Seccion titulo="4. Exportar">
-          <div className="grid gap-2">
-            <button onClick={descargarPNG} disabled={!imagen} className="btn-secundario">
-              ⬇ Descargar PNG
+        <div className="space-y-2 border-t border-borde pt-5">
+          {guardado ? (
+            <Link href={`/panel/mascotas/${mascota.id}/tag`} className="btn-primario w-full py-3">
+              Siguiente: diseñar la placa
+            </Link>
+          ) : (
+            <button onClick={guardarDiseno} disabled={!imagen || guardando} className="btn-primario w-full py-3">
+              {guardando && <Spinner />} Guardar este grabado
             </button>
-            <button
-              onClick={descargarSVG}
-              disabled={!imagen || modo !== "silueta"}
-              className="btn-secundario"
-              title={modo !== "silueta" ? "El SVG solo está disponible en modo Silueta" : ""}
-            >
-              ⬇ Descargar SVG {modo !== "silueta" && "(solo Silueta)"}
-            </button>
-            <button onClick={guardarDiseno} disabled={!imagen || guardando} className="btn-primario">
-              {guardando ? "Guardando..." : "Guardar diseño"}
-            </button>
-          </div>
-          {mensaje && <p className="mt-2 text-sm text-stone-700">{mensaje}</p>}
-        </Seccion>
+          )}
+          <details className="text-sm">
+            <summary className="cursor-pointer py-1 font-semibold text-tinta-suave">Descargar archivos</summary>
+            <div className="mt-2 grid grid-cols-2 gap-2">
+              <button onClick={descargarPNG} disabled={!imagen} className="btn-secundario px-3 text-sm">
+                PNG
+              </button>
+              <button
+                onClick={descargarSVG}
+                disabled={!imagen || modo !== "silueta"}
+                className="btn-secundario px-3 text-sm"
+                title={modo !== "silueta" ? "Disponible solo en estilo Silueta" : ""}
+              >
+                SVG
+              </button>
+            </div>
+            {modo !== "silueta" && <p className="mt-1 text-xs text-tinta-suave">El SVG solo está disponible en estilo Silueta.</p>}
+          </details>
+        </div>
       </div>
     </div>
   );
@@ -383,19 +412,21 @@ function descargar(blob, nombre) {
 
 function Seccion({ titulo, children }) {
   return (
-    <div>
-      <h3 className="mb-2 text-sm font-semibold text-stone-800">{titulo}</h3>
-      <div className="space-y-2">{children}</div>
-    </div>
+    <section>
+      <h2 className="mb-2 text-lg font-bold">{titulo}</h2>
+      <div className="space-y-3">{children}</div>
+    </section>
   );
 }
 
 function BotonPestana({ activo, onClick, children }) {
   return (
     <button
+      role="tab"
+      aria-selected={activo}
       onClick={onClick}
-      className={`rounded-md px-3 py-1.5 text-xs font-medium ${
-        activo ? "bg-amber-800 text-white" : "bg-stone-100 text-stone-700 hover:bg-stone-200"
+      className={`rounded-full px-3 py-1.5 text-sm font-semibold transition-colors ${
+        activo ? "bg-collar text-white" : "text-tinta-suave hover:text-tinta"
       }`}
     >
       {children}
@@ -406,8 +437,8 @@ function BotonPestana({ activo, onClick, children }) {
 function Deslizador({ etiqueta, valor, min, max, onChange }) {
   return (
     <label className="block text-sm">
-      <span className="flex justify-between text-stone-700">
-        {etiqueta} <span className="text-stone-500">{valor}</span>
+      <span className="flex justify-between font-medium">
+        {etiqueta} <span className="tabular-nums text-tinta-suave">{valor}</span>
       </span>
       <input
         type="range"
@@ -415,7 +446,7 @@ function Deslizador({ etiqueta, valor, min, max, onChange }) {
         max={max}
         value={valor}
         onChange={(e) => onChange(Number(e.target.value))}
-        className="w-full accent-amber-800"
+        className="mt-1 w-full accent-collar"
       />
     </label>
   );
